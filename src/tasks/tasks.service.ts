@@ -8,13 +8,62 @@ import { Task } from './schemas/task.schema';
 import { isValidObjectId, Model } from 'mongoose';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
+import { GetTasksDto } from './dto/get-tasks.dto';
+
+/** Literal substring search: strip regex metacharacters so user input is not treated as a pattern. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 @Injectable()
 export class TasksService {
   constructor(@InjectModel(Task.name) private taskModel: Model<Task>) {}
 
-  async findAllByUser(userId: string) {
-    return this.taskModel.find({ ownerId: userId });
+  async findAllByUser(userId: string, query: GetTasksDto) {
+    const { status, priority, search, sortBy, sortOrder, page, limit } = query;
+    const filter: any = { ownerId: userId };
+
+    if (status) {
+      filter.status = status;
+    }
+
+    if (priority) {
+      filter.priority = priority;
+    }
+
+    const trimmedSearch = search?.trim();
+    if (trimmedSearch) {
+      const safe = escapeRegExp(trimmedSearch);
+      filter.$or = [
+        { title: { $regex: safe, $options: 'i' } },
+        { description: { $regex: safe, $options: 'i' } },
+      ];
+    }
+    const sortOptions: Record<string, 1 | -1> = {};
+
+    if (sortBy) {
+      // sortBy is narrowed by GetTasksDto (TaskSortField); direction matches SortOrder enum.
+      sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    } else {
+      // дефолт
+      sortOptions.createdAt = -1;
+    }
+
+    const skip = (page - 1) * limit;
+
+    const [tasks, total] = await Promise.all([
+      this.taskModel.find(filter).sort(sortOptions).skip(skip).limit(limit),
+
+      this.taskModel.countDocuments(filter),
+    ]);
+
+    return {
+      data: tasks,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
   // Створення задачі, прив'язаної до користувача (DTO (Data Transfer Object) )
   async createTask(userId: string, dto: CreateTaskDto) {
@@ -25,6 +74,23 @@ export class TasksService {
 
     return createdTask.save();
   }
+
+  async findOne(userId: string, taskId: string) {
+  if (!isValidObjectId(taskId)) {
+    throw new BadRequestException('Invalid task id');
+  }
+
+  const task = await this.taskModel.findOne({
+    _id: taskId,
+    ownerId: userId,
+  });
+
+  if (!task) {
+    throw new NotFoundException('Task not found');
+  }
+
+  return task;
+}
 
   async updateTask(userId: string, taskId: string, dto: UpdateTaskDto) {
     try {
@@ -55,7 +121,7 @@ export class TasksService {
       throw err;
     }
   }
-  
+
   async deleteTask(userId: string, taskId: string) {
     if (!isValidObjectId(taskId)) {
       throw new BadRequestException('Invalid task id');

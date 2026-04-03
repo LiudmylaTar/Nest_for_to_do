@@ -4,8 +4,22 @@ export enum TaskStatus {
   DONE = 'done',
 }
 export enum TaskPriority {
-  HIGH = 'For yesterday',     
-  IMPORTANT = 'As soon as possible',
+  HIGH = 'high',
+  IMPORTANT = 'important',
   MEDIUM = 'medium',
-LOW = 'when I have time',
+  LOW = 'low',
+}
+
+export enum SortOrder {
+  ASC = 'asc',
+  DESC = 'desc',
+}
+
+/** Allowed `sortBy` query values — must match fields used in TasksService.sort(). */
+export enum TaskSortField {
+  TITLE = 'title',
+  STATUS = 'status',
+  PRIORITY = 'priority',
+  CREATED_AT = 'createdAt',
+  UPDATED_AT = 'updatedAt',
 }

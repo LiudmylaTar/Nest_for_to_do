@@ -27,4 +27,8 @@ export class Task {
 }
 
 export const TaskSchema = SchemaFactory.createForClass(Task);
+
+// Speeds up filtered, sorted lists per user as data grows.
+TaskSchema.index({ ownerId: 1, status: 1, createdAt: -1 });
+
 export type TaskDocument = Task & Document;
