@@ -1,5 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import {   UnauthorizedException  } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from 'src/users/users.service';
@@ -37,5 +36,19 @@ export class AuthService {
       access_token: this.jwtService.sign(payload),
       user: safeUser,
     };
+  }
+  async findCurrentById(id: string, email: string) {
+    const user = await this.usersService.findByMail(email);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (String(user._id) !== id) {
+      throw new UnauthorizedException('Invalid token payload');
+    }
+
+    const { password: _password, ...safeUser } = user.toObject();
+    return safeUser;
   }
 }
