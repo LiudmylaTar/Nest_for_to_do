@@ -9,6 +9,7 @@ import { isValidObjectId, Model } from 'mongoose';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { GetTasksDto } from './dto/get-tasks.dto';
+import { TaskSortField } from './task-status.enum';
 
 /** Literal substring search: strip regex metacharacters so user input is not treated as a pattern. */
 function escapeRegExp(value: string): string {
@@ -39,23 +40,41 @@ export class TasksService {
         { description: { $regex: safe, $options: 'i' } },
       ];
     }
-    const sortOptions: Record<string, 1 | -1> = {};
-
-    if (sortBy) {
-      // sortBy is narrowed by GetTasksDto (TaskSortField); direction matches SortOrder enum.
-      sortOptions[sortBy] = sortOrder === 'desc' ? -1 : 1;
-    } else {
-      // дефолт
-      sortOptions.createdAt = -1;
-    }
-
+    const sortDirection: 1 | -1 = sortOrder === 'desc' ? -1 : 1;
     const skip = (page - 1) * limit;
+    const totalPromise = this.taskModel.countDocuments(filter);
 
-    const [tasks, total] = await Promise.all([
-      this.taskModel.find(filter).sort(sortOptions).skip(skip).limit(limit),
+    const tasksPromise =
+      sortBy === TaskSortField.PRIORITY
+        ? this.taskModel.aggregate([
+            { $match: filter },
+            {
+              $addFields: {
+                priorityRank: {
+                  $switch: {
+                    branches: [
+                      { case: { $eq: ['$priority', 'high'] }, then: 4 },
+                      { case: { $eq: ['$priority', 'important'] }, then: 3 },
+                      { case: { $eq: ['$priority', 'medium'] }, then: 2 },
+                      { case: { $eq: ['$priority', 'low'] }, then: 1 },
+                    ],
+                    default: 0,
+                  },
+                },
+              },
+            },
+            { $sort: { priorityRank: sortDirection, createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            { $project: { priorityRank: 0 } },
+          ])
+        : this.taskModel
+            .find(filter)
+            .sort(sortBy ? { [sortBy]: sortDirection } : { createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
 
-      this.taskModel.countDocuments(filter),
-    ]);
+    const [tasks, total] = await Promise.all([tasksPromise, totalPromise]);
 
     return {
       data: tasks,
